@@ -1,0 +1,200 @@
+---
+title: "midterm"
+author: "Weixi Pan"
+format:
+  html:
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+library(dtplyr)
+library(ggplot2)
+```
+
+## Introduction
+
+Since 2020, COVID-19 has become a worldwide pandemic, affecting people around the world. It is an infectious disease caused by the SARS-CoV-2 virus and bears a strong resemblance to pneumonia, impacting the lungs. This project aims to examine the connection between COVID-19 deaths and various factors, including states, gender, age, and other infectious diseases in the United States. Exploring these data relationships is beneficial for studying COVID-19 fatalities.
+
+## Method
+
+The data was download from database of Centers for Disease Control and Prevention. (https://data.cdc.gov/NCHS/Provisional-COVID-19-Deaths-by-Sex-and-Age/9bhg-hcku) The data introduce provisional COVID-19 deaths by sex and age from January 1st, 2020 to September 23th, 2022. Read the data by using `data.table::fread()`.
+
+```{r}
+#read the data
+data <- data.table::fread("/Users/cici/Desktop/pm566/midterm/Provisional_COVID-19_Deaths_by_Sex_and_Age.csv")
+
+dim (data)
+```
+
+The output shows that the data has 137700 rows and 16 columns. Use `str()` to check those variables.
+
+## Data cleaning and wrangling
+
+```{r}
+data <- data[!is.na(Month)]
+data <- data[!is.na(Year)]
+
+#find na
+r1 = sum(is.na(data$`COVID-19 Deaths`))/sum(complete.cases(data$`COVID-19 Deaths`))
+r2 = sum(is.na(data$`Total Deaths`))/sum(complete.cases(data$`Total Deaths`))
+r3 = sum(is.na(data$`Pneumonia Deaths`))/sum(complete.cases(data$`Pneumonia Deaths`))
+r4 = sum(is.na(data$`Pneumonia and COVID-19 Deaths`))/sum(complete.cases(data$`Pneumonia and COVID-19 Deaths`))
+r5 = sum(is.na(data$`Influenza Deaths`))/sum(complete.cases(data$`Influenza Deaths`))
+r6 = sum(is.na(data$`Pneumonia, Influenza, or COVID-19 Deaths`))/sum(complete.cases(data$`Pneumonia, Influenza, or COVID-19 Deaths`))
+c(r1,r2,r3,r4,r5,r6)%>%
+knitr::kable()
+```
+
+Overall, all the proportion of NA is over 10% so that we can not delete them directly.
+
+Find out the proportion of COVID-19 in total number of death:
+
+```{r}
+COVID_Death_Prop <- data$`COVID-19 Deaths`/data$`Total Deaths`
+
+data <- cbind(data, COVID_Death_Prop)
+```
+
+## Preliminary Results
+
+### COVID-19 deaths Distribution:
+
+```{r}
+plot(
+  data$Month, data$`COVID-19 Deaths`, pch=20, cex=2,
+  main = "Distribution of COVID-19 Deaths during the Year",
+  xlab= "Month", ylab="COVID-19 Deaths")
+```
+
+From the plot, we can see that the deaths numbers fluctuated during the whole year. They were mostly higher in winter (December and Janurary) and held the lowest point in the middle of the year (June).
+
+### Summary averages:
+
+```{r}
+data %>% group_by(Year)%>%
+  summarise(
+    covid_death_avg  =mean(`COVID-19 Deaths`, na.rm= TRUE),
+    covid_prop_avg = mean(COVID_Death_Prop, na.rm =TRUE)
+  )%>% 
+  knitr::kable()
+```
+
+From the table above, it shows that the death average decreased from 2020 to 2022, but the death proportion increased in 2022.
+
+### Death Proportion Distribution:
+
+```{r}
+data%>%
+  ggplot()+
+  geom_violin(mapping = aes(x=1, y=COVID_Death_Prop, color=Year, fill=Year))+ 
+  facet_wrap(~Year)+
+  ggtitle("Distribution of Covid-19 Death Proportion")
+
+```
+
+The plots showed that most high proportions were in 2020, so that the death proportion decreased by year.
+
+### Distribution of Deaths by Sex
+
+```{r}
+#summary
+data %>% group_by(Sex)%>%
+  summarise(
+    covid_death_avg  =mean(`COVID-19 Deaths`, na.rm= TRUE),
+    covid_prop_avg = mean(COVID_Death_Prop, na.rm =TRUE))
+
+#build the plot
+ data[!is.na(`COVID-19 Deaths`)]%>%
+  ggplot(mapping = aes(x= `Sex`, y= `COVID-19 Deaths` ))+
+  stat_summary(fun.data = mean_sdl, geom= "pointrange")+
+  stat_summary(fun.data = mean_sdl, geom= "errorbar")+
+   ggtitle("Distribution of Covid-19 Death by Sex")
+```
+
+Male held the higher deaths than female. The death proportion among different genders show almost same mean number. But the standard deviation of female is smaller than that of male.
+
+### Correlation of deaths by sex
+
+Because the distribution of deaths by sex in `stat_summary` . We used correlation to find out the relationship.
+
+```{r}
+data[!is.na(Sex)]%>%
+  ggplot(mapping = aes(x=data$`COVID-19 Deaths`, 
+                       y= data$COVID_Death_Prop))+ 
+  geom_point(mapping = aes(color= Sex))+
+  geom_smooth()+
+  ggtitle("Correlation for Covid Death by Sex")
+```
+
+The output can not show the obvious relationship between deaths and proportion among different sex.
+
+### Distribution of Deaths Average by State
+
+```{r}
+#summary
+data %>% group_by(State)%>%
+  summarise(
+    covid_death_avg  =mean(`COVID-19 Deaths`, na.rm= TRUE),
+    covid_prop_avg = mean(COVID_Death_Prop, na.rm =TRUE)
+  )%>%arrange(desc(covid_death_avg))%>%
+knitr::kable()
+
+#plot
+state <- data[!(State == "United States")]
+state[!is.na(`COVID-19 Deaths`)]%>%
+  ggplot(aes(x= `COVID-19 Deaths`, 
+             y=fct_reorder(State, `COVID-19 Deaths`)))+
+  geom_col(width = 1)+
+  ggtitle("Distribution of Covid-19 Death by State")
+```
+
+From the output above, Texas held the most death number and proportion (287.45, 0.09) among all states and Vermont held the least (1.41, 0.02).
+
+### Distribution of Deaths by Age groups
+
+```{r}
+#summary
+data %>% group_by('Age Group')%>%
+  summarise(
+    covid_death_avg  =mean(`COVID-19 Deaths`, na.rm= TRUE),
+    covid_prop_avg = mean(COVID_Death_Prop, na.rm =TRUE)
+  )
+
+#plot
+age <- data[!(`Age Group` == "All Ages")]
+age[!is.na(`COVID-19 Deaths`)]%>%
+  ggplot(aes(x= `COVID-19 Deaths`, 
+             y=fct_reorder(`Age Group`, `COVID-19 Deaths`)))+
+  geom_col(width = 0.5)+
+  ggtitle("Distribution of Covid-19 Death by Age Groups")
+
+```
+
+The output above shows that the deaths were higher among older age groups.
+
+### Correlation of deaths by Age groups
+
+```{r}
+data%>%
+  ggplot(mapping = aes(x= `COVID-19 Deaths`, 
+                       y=`COVID_Death_Prop`))+
+  geom_point(mapping = aes(color= `Age Group`))+
+  geom_smooth(method=lm, mapping = aes(linetype= `Age Group`))+
+  facet_wrap(~`Age Group`, nrow=5)+
+  ggtitle("Correlations for Deaths and Proportion by Age Group")
+
+```
+
+The output above shows that there may be some linear relationship between deaths numbers and proportions in some specific age groups (50-64 years, 85 years and over, under 1 year).
+
+## Conclusion
+
+In this project, our main objective is to analyze the distribution of COVID-19 death numbers and proportions across different years, genders, age groups, and states. We observed that deaths were higher in the winter and reached their lowest point in the summer. Additionally, the death proportion gradually decreased over the years.
+
+When examining different genders, we found that males had a higher number of deaths than females, while the proportions of deaths in both genders were nearly identical. There appears to be no obvious linear correlation between death numbers and proportions in different gender groups.
+
+Across various states in the United States, Texas reported the highest number of deaths, while Vermont had the lowest. Deaths were also more prevalent in older age groups. It's possible that a linear relationship exists between death numbers and proportions when specific age groups are considered. In this case, further research is needed to explore this aspect.
